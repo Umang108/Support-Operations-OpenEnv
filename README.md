@@ -1,3 +1,13 @@
+---
+title: support-ops-openenv
+emoji: "🧰"
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Support Ops OpenEnv
 
 `support-ops-openenv` is a complete OpenEnv-style environment that simulates a real customer support operations workflow. An agent works through an inbox, classifies tickets, routes them to the correct team, replies to customers, updates status, and finally submits the queue for grading.
