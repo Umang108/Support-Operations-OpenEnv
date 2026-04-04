@@ -1,0 +1,12 @@
+﻿name: support-ops-env
+description: Customer support ticket triage and routing environment for agentic RL.
+version: 0.1.0
+entrypoint: support_ops_env.server.app:app
+package: support_ops_env
+tags:
+  - openenv
+  - customer-support
+  - triage
+  - reinforcement-learning
+license: mit
+author: local
