@@ -5,7 +5,13 @@ import json
 import os
 from pathlib import Path
 
-from openai import AzureOpenAI, OpenAI
+from openai import OpenAI
+from pydantic import ValidationError
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover
+    load_dotenv = None
 
 from support_ops_env.models import SupportOpsAction
 from support_ops_env.server.support_ops_environment import SupportOpsEnvironment
@@ -26,8 +32,48 @@ Return exactly one JSON object matching this schema:
 Choose the single best next action. Do not include markdown fences."""
 
 
+_CATEGORY_ALIASES = {
+    "account access": "account_access",
+    "account_access": "account_access",
+    "account-access": "account_access",
+    "billing": "billing",
+    "bug report": "bug_report",
+    "bug_report": "bug_report",
+    "bug-report": "bug_report",
+    "security": "security",
+    "shipping": "shipping",
+}
+
+_PRIORITY_ALIASES = {
+    "low": "low",
+    "normal": "normal",
+    "medium": "normal",
+    "med": "normal",
+    "high": "high",
+    "urgent": "urgent",
+    "critical": "urgent",
+    "sev1": "urgent",
+}
+
+
+def _normalize_payload(payload: dict) -> dict:
+    normalized = dict(payload)
+
+    category = normalized.get("category")
+    if isinstance(category, str):
+        key = category.strip().lower().replace("_", " ").replace("-", " ")
+        normalized["category"] = _CATEGORY_ALIASES.get(key, category.strip().lower())
+
+    priority = normalized.get("priority")
+    if isinstance(priority, str):
+        key = priority.strip().lower().replace("_", " ").replace("-", " ")
+        normalized["priority"] = _PRIORITY_ALIASES.get(key, priority.strip().lower())
+
+    return normalized
+
+
 def choose_action(
-    client: OpenAI | AzureOpenAI,
+    client: OpenAI,
     model: str,
     task_id: str,
     observation: dict,
@@ -54,10 +100,16 @@ def choose_action(
     )
     content = response.choices[0].message.content or "{}"
     payload = json.loads(content)
-    return SupportOpsAction.model_validate(payload)
+    normalized_payload = _normalize_payload(payload)
+
+    try:
+        return SupportOpsAction.model_validate(normalized_payload)
+    except ValidationError:
+        # Keep baseline running even when model emits invalid enum variants.
+        return SupportOpsAction(action_type="list_tickets")
 
 
-def run_task(client: OpenAI | AzureOpenAI, model: str, task_id: str, max_agent_steps: int = 12) -> dict:
+def run_task(client: OpenAI, model: str, task_id: str, max_agent_steps: int = 12) -> dict:
     env = SupportOpsEnvironment()
     observation = env.reset(task_id=task_id)
     history: list[dict] = []
@@ -91,32 +143,35 @@ def run_task(client: OpenAI | AzureOpenAI, model: str, task_id: str, max_agent_s
     }
 
 
-def build_client_and_model(requested_model: str | None) -> tuple[OpenAI | AzureOpenAI, str]:
-    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+def build_client_and_model(requested_model: str | None) -> tuple[OpenAI, str]:
+    # Preferred generic OpenAI-compatible configuration.
+    hf_token = os.getenv("HF_TOKEN")
+    api_base_url = os.getenv("API_BASE_URL")
+    model_name = os.getenv("MODEL_NAME")
+    if hf_token:
+        client = OpenAI(api_key=hf_token, base_url=api_base_url or "https://router.huggingface.co/v1")
+        return client, requested_model or model_name or "Qwen/Qwen2.5-72B-Instruct"
 
-    if azure_endpoint and azure_api_key and azure_deployment and azure_api_version:
-        client = AzureOpenAI(
-            api_key=azure_api_key,
-            azure_endpoint=azure_endpoint,
-            api_version=azure_api_version,
-        )
-        return client, requested_model or azure_deployment
+    # Backward-compatible Groq configuration.
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    groq_model = os.getenv("MODEL") or os.getenv("GROQ_MODEL")
 
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key:
-        return OpenAI(api_key=openai_api_key), requested_model or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    if groq_api_key:
+        client = OpenAI(api_key=groq_api_key, base_url="https://api.groq.com/openai/v1")
+        return client, requested_model or groq_model or "llama-3.3-70b-versatile"
 
     raise SystemExit(
-        "Missing model credentials. Set either AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, "
-        "AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION or OPENAI_API_KEY."
+        "Missing model credentials. Set HF_TOKEN (and optionally API_BASE_URL, MODEL_NAME) "
+        "or set GROQ_API_KEY (and optionally MODEL/GROQ_MODEL)."
     )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run an OpenAI baseline against all support ops tasks.")
+    # Load local .env automatically for easier local runs.
+    if load_dotenv is not None:
+        load_dotenv()
+
+    parser = argparse.ArgumentParser(description="Run a baseline against all support ops tasks.")
     parser.add_argument("--model", default=None)
     parser.add_argument("--output", default="baseline_results.json")
     args = parser.parse_args()

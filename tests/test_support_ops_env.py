@@ -47,14 +47,32 @@ def test_openapi_schema_is_available() -> None:
     assert response.json()["openapi"].startswith("3.")
 
 
-def test_build_client_prefers_azure(monkeypatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example-resource.openai.azure.com/")
-    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4.1")
-    monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_build_client_uses_groq(monkeypatch) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL", "llama-3.3-70b-versatile")
 
     client, model = build_client_and_model(None)
 
-    assert client.__class__.__name__ == "AzureOpenAI"
-    assert model == "gpt-4.1"
+    assert client.__class__.__name__ == "OpenAI"
+    assert client.api_key == "test-key"
+    assert str(client.base_url) == "https://api.groq.com/openai/v1/"
+    assert model == "llama-3.3-70b-versatile"
+
+
+def test_build_client_uses_hf_token(monkeypatch) -> None:
+    monkeypatch.setenv("HF_TOKEN", "hf-test-key")
+    monkeypatch.setenv("API_BASE_URL", "https://router.huggingface.co/v1")
+    monkeypatch.setenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("MODEL", raising=False)
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+
+    client, model = build_client_and_model(None)
+
+    assert client.__class__.__name__ == "OpenAI"
+    assert client.api_key == "hf-test-key"
+    assert str(client.base_url) == "https://router.huggingface.co/v1/"
+    assert model == "Qwen/Qwen2.5-72B-Instruct"
