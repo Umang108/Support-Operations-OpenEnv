@@ -35,6 +35,7 @@ python -m support_ops_env.server
 ```
 
 Server runs on `http://127.0.0.1:7860`.
+go to `http://127.0.0.1:7860/docs` endpoints
 
 ## Submission Inference (Mandatory)
 
