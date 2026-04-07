@@ -50,7 +50,7 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
 def log_end(success: bool, steps: int, score: float, rewards: list[float]) -> None:
     rewards_str = ",".join(f"{reward:.2f}" for reward in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.5f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -158,13 +158,21 @@ def run_task(client: OpenAI, task_id: str) -> None:
 
         state = env.state()
         score = float(state.score_breakdown.aggregate_score)
-        score = min(max(score, 0.0), 1.0)
+        # Ensure score is strictly in open interval (0, 1) — never 0.0 or 1.0
+        if score <= 0.0:
+            score = 0.0001
+        elif score >= 1.0:
+            score = 0.9999
         success = score >= 0.1
     except Exception:
         success = False
         state = env.state()
         score = float(state.score_breakdown.aggregate_score)
-        score = min(max(score, 0.0), 1.0)
+        # Ensure score is strictly in open interval (0, 1) — never 0.0 or 1.0
+        if score <= 0.0:
+            score = 0.0001
+        elif score >= 1.0:
+            score = 0.9999
     finally:
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
