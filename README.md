@@ -63,7 +63,7 @@ python inference.py
   - `[STEP] step=... action=... reward=0.00 done=true|false error=...|null`
   - `[END] success=true|false steps=... score=... rewards=r1,r2,...`
 
-Each task score is normalized to `[0.0, 1.0]`.
+Each task score is normalized to `(0.0, 1.0)` (strictly between 0 and 1).
 
 ## API Endpoints
 

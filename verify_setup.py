@@ -187,7 +187,7 @@ def test_grading() -> bool:
         state = env.state()
         score = state.score_breakdown.aggregate_score
 
-        assert 0.0 <= score <= 1.0, f"Invalid score: {score}"
+        assert 0.0 < score < 1.0, f"Invalid score (must be strictly between 0 and 1): {score}"
         print_success(f"Task graded with score: {score}")
 
         print_success(f"Completed objectives: {len(state.score_breakdown.completed_objectives)}")
