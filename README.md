@@ -125,9 +125,3 @@ Stop:
 ```bash
 docker compose down
 ```
-
-env-file .env -p 7860:7860 support-ops-env
-
-```
-
-```

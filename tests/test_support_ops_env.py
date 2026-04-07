@@ -29,7 +29,9 @@ def test_easy_task_can_reach_full_score() -> None:
     env.step(SupportOpsAction(action_type="set_status", ticket_id="T-100", status="resolved"))
     result = env.step(SupportOpsAction(action_type="submit_task", message="done"))
     assert result.done is True
-    assert env.state().score_breakdown.aggregate_score == 1.0
+    score = env.state().score_breakdown.aggregate_score
+    assert 0.0 < score < 1.0
+    assert score >= 0.99
 
 
 def test_invalid_action_is_penalized() -> None:

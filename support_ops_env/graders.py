@@ -6,10 +6,22 @@ from support_ops_env.models import ScoreBreakdown, TicketSnapshot
 from support_ops_env.task_bank import TaskDefinition, TicketGoal
 
 
+EPSILON = 1e-4
+
+
 @dataclass
 class GradeResult:
     score: float
     breakdown: ScoreBreakdown
+
+
+def _strict_unit_interval(value: float) -> float:
+    """Map scores to the open interval (0, 1) for submission validator compliance."""
+    if value <= 0.0:
+        return EPSILON
+    if value >= 1.0:
+        return 1.0 - EPSILON
+    return value
 
 
 def _score_reply(reply: str | None, goal: TicketGoal) -> float:
@@ -76,13 +88,15 @@ def grade_task(task: TaskDefinition, tickets: list[TicketSnapshot]) -> GradeResu
     for goal in task.goals:
         ticket = ticket_map[goal.ticket_id]
         ticket_score, done_items, missing_items = _score_ticket(ticket, goal)
+        ticket_score = _strict_unit_interval(ticket_score)
         ticket_scores[goal.ticket_id] = round(ticket_score, 4)
         weighted_sum += ticket_score * goal.weight
         total_weight += goal.weight
         completed.extend(done_items)
         missing.extend(missing_items)
 
-    aggregate_score = 0.0 if total_weight == 0 else round(weighted_sum / total_weight, 4)
+    aggregate_raw = 0.5 if total_weight == 0 else (weighted_sum / total_weight)
+    aggregate_score = round(_strict_unit_interval(aggregate_raw), 4)
     return GradeResult(
         score=aggregate_score,
         breakdown=ScoreBreakdown(

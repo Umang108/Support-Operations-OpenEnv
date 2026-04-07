@@ -79,33 +79,37 @@ def choose_action(
     observation: dict,
     history: list[dict],
 ) -> SupportOpsAction:
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "task_id": task_id,
-                        "observation": observation,
-                        "recent_action_history": history[-6:],
-                    },
-                    indent=2,
-                ),
-            },
-        ],
-    )
-    content = response.choices[0].message.content or "{}"
-    payload = json.loads(content)
-    normalized_payload = _normalize_payload(payload)
-
     try:
-        return SupportOpsAction.model_validate(normalized_payload)
-    except ValidationError:
-        # Keep baseline running even when model emits invalid enum variants.
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task_id": task_id,
+                            "observation": observation,
+                            "recent_action_history": history[-6:],
+                        },
+                        indent=2,
+                    ),
+                },
+            ],
+        )
+        content = response.choices[0].message.content or "{}"
+        payload = json.loads(content)
+        normalized_payload = _normalize_payload(payload)
+
+        try:
+            return SupportOpsAction.model_validate(normalized_payload)
+        except ValidationError:
+            # Keep baseline running even when model emits invalid enum variants.
+            return SupportOpsAction(action_type="list_tickets")
+    except Exception:
+        # Provider failures (e.g., exhausted credits) should not crash baseline runs.
         return SupportOpsAction(action_type="list_tickets")
 
 
@@ -167,16 +171,24 @@ def build_client_and_model(requested_model: str | None) -> tuple[OpenAI, str]:
 
 
 def main() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env_path = repo_root / ".env"
+
     # Load local .env automatically for easier local runs.
-    if load_dotenv is not None:
-        load_dotenv()
+    if load_dotenv is not None and env_path.exists():
+        load_dotenv(dotenv_path=env_path)
 
     parser = argparse.ArgumentParser(description="Run a baseline against all support ops tasks.")
     parser.add_argument("--model", default=None)
     parser.add_argument("--output", default="baseline_results.json")
     args = parser.parse_args()
 
-    client, model = build_client_and_model(args.model)
+    try:
+        client, model = build_client_and_model(args.model)
+    except SystemExit as exc:
+        if not env_path.exists():
+            raise SystemExit(f"{exc}\nAlso missing: {env_path}. Create it (or export env vars in shell).")
+        raise
     results = [run_task(client, model, task_id) for task_id in list_task_ids()]
     summary = {
         "model": model,
